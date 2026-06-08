@@ -3,10 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import csv
 import io
+import json
 
-from app.db import get_db, Prospect, Research
-from app.schemas import ProspectCreate, ProspectOut, ResearchResult
+from app.db import get_db, Prospect, Research, EmailDraftModel
+from app.schemas import ProspectCreate, ProspectOut, ResearchResult, EmailDraft
 from app.agents.researcher import research_prospect
+from app.agents.writer import write_email
 
 router = APIRouter(prefix="/prospects", tags=["prospects"])
 
@@ -68,7 +70,6 @@ async def run_research(prospect_id: int, db: AsyncSession = Depends(get_db)):
     )
     research_result = await research_prospect(prospect_data, prospect_id)
 
-    import json
     research_row = Research(
         prospect_id=prospect_id,
         company_summary=research_result.company_summary,
@@ -83,3 +84,70 @@ async def run_research(prospect_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     return research_result
+
+
+@router.post("/{prospect_id}/draft", response_model=EmailDraft)
+async def run_writer(prospect_id: int, db: AsyncSession = Depends(get_db)):
+    prospect_row = (await db.execute(select(Prospect).where(Prospect.id == prospect_id))).scalar_one_or_none()
+    if not prospect_row:
+        raise HTTPException(status_code=404, detail="Prospect not found")
+
+    research_row = (await db.execute(select(Research).where(Research.prospect_id == prospect_id))).scalar_one_or_none()
+    if not research_row:
+        raise HTTPException(status_code=400, detail="Run /research first before drafting")
+
+    prospect_data = ProspectCreate(
+        first_name=prospect_row.first_name,
+        last_name=prospect_row.last_name,
+        email=prospect_row.email,
+        role=prospect_row.role,
+        company=prospect_row.company,
+        website_url=prospect_row.website_url,
+        linkedin_url=prospect_row.linkedin_url,
+    )
+    research_data = ResearchResult(
+        prospect_id=prospect_id,
+        company_summary=research_row.company_summary,
+        pain_points=json.loads(research_row.pain_points),
+        personalization_hooks=json.loads(research_row.personalization_hooks),
+        recommended_angle=research_row.recommended_angle,
+        confidence_score=research_row.confidence_score,
+    )
+
+    draft = await write_email(prospect_data, research_data, prospect_id)
+
+    existing = (await db.execute(select(EmailDraftModel).where(EmailDraftModel.prospect_id == prospect_id))).scalar_one_or_none()
+    if existing:
+        existing.subject = draft.subject
+        existing.subject_alt = draft.subject_alt
+        existing.body = draft.body
+        existing.follow_up_1 = draft.follow_up_1
+        existing.follow_up_2 = draft.follow_up_2
+    else:
+        db.add(EmailDraftModel(
+            prospect_id=prospect_id,
+            subject=draft.subject,
+            subject_alt=draft.subject_alt,
+            body=draft.body,
+            follow_up_1=draft.follow_up_1,
+            follow_up_2=draft.follow_up_2,
+        ))
+
+    prospect_row.status = "email_drafted"
+    await db.commit()
+    return draft
+
+
+@router.get("/{prospect_id}/draft", response_model=EmailDraft)
+async def get_draft(prospect_id: int, db: AsyncSession = Depends(get_db)):
+    draft = (await db.execute(select(EmailDraftModel).where(EmailDraftModel.prospect_id == prospect_id))).scalar_one_or_none()
+    if not draft:
+        raise HTTPException(status_code=404, detail="No draft found — run POST /draft first")
+    return EmailDraft(
+        prospect_id=prospect_id,
+        subject=draft.subject,
+        subject_alt=draft.subject_alt,
+        body=draft.body,
+        follow_up_1=draft.follow_up_1,
+        follow_up_2=draft.follow_up_2,
+    )

@@ -53,6 +53,7 @@ class ResearchResult(BaseModel):
 class EmailDraft(BaseModel):
     prospect_id: int
     subject: str
+    subject_alt: str
     body: str
     follow_up_1: str
     follow_up_2: str

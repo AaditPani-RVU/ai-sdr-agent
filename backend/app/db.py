@@ -63,6 +63,7 @@ class EmailDraftModel(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     prospect_id: Mapped[int] = mapped_column(ForeignKey("prospects.id"), unique=True)
     subject: Mapped[str] = mapped_column(String(500))
+    subject_alt: Mapped[str] = mapped_column(String(500), default="")
     body: Mapped[str] = mapped_column(Text)
     follow_up_1: Mapped[str] = mapped_column(Text)
     follow_up_2: Mapped[str] = mapped_column(Text)

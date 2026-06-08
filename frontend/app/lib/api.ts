@@ -20,6 +20,10 @@ export const api = {
     req<Prospect>("/prospects/", { method: "POST", body: JSON.stringify(data) }),
   researchProspect: (id: number) =>
     req<ResearchResult>(`/prospects/${id}/research`, { method: "POST" }),
+  draftEmail: (id: number) =>
+    req<EmailDraft>(`/prospects/${id}/draft`, { method: "POST" }),
+  getDraft: (id: number) =>
+    req<EmailDraft>(`/prospects/${id}/draft`),
 
   classifyReply: (prospectId: number, emailBody: string) =>
     req<ReplyOut>("/replies/classify", {
@@ -43,6 +47,10 @@ export interface ResearchResult {
   prospect_id: number; company_summary: string; pain_points: string[];
   personalization_hooks: string[]; recommended_angle: string;
   thinking_trace?: string; confidence_score: number;
+}
+export interface EmailDraft {
+  prospect_id: number; subject: string; subject_alt: string;
+  body: string; follow_up_1: string; follow_up_2: string;
 }
 export interface ReplyOut {
   prospect_id: number; category: string; summary: string; suggested_action: string;
