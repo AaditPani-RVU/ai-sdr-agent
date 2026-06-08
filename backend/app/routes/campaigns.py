@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 
 from app.db import get_db, Campaign, Prospect
 from app.schemas import CampaignCreate, CampaignOut
@@ -26,9 +26,9 @@ async def list_campaigns(db: AsyncSession = Depends(get_db)):
         counts = await db.execute(
             select(
                 func.count(Prospect.id),
-                func.sum((Prospect.status == "sent").cast(func.Integer())),
-                func.sum((Prospect.status == "replied").cast(func.Integer())),
-                func.sum((Prospect.status == "booked").cast(func.Integer())),
+                func.sum(case((Prospect.status == "sent", 1), else_=0)),
+                func.sum(case((Prospect.status == "replied", 1), else_=0)),
+                func.sum(case((Prospect.status == "booked", 1), else_=0)),
             ).where(Prospect.campaign_id == c.id)
         )
         total, sent, replied, booked = counts.one()

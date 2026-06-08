@@ -1,7 +1,8 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, Float, Text, ForeignKey, Enum as SAEnum
+from sqlalchemy import String, Integer, Float, Text, ForeignKey, DateTime
 from typing import Optional
+from datetime import datetime
 import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./sdr.db")
@@ -37,6 +38,9 @@ class Prospect(Base):
     website_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     linkedin_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="pending")
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    followups_sent: Mapped[int] = mapped_column(Integer, default=0)
+    gmail_thread_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     campaign_id: Mapped[Optional[int]] = mapped_column(ForeignKey("campaigns.id"), nullable=True)
     campaign: Mapped[Optional["Campaign"]] = relationship(back_populates="prospects")
     research: Mapped[Optional["Research"]] = relationship(back_populates="prospect", uselist=False)

@@ -1,0 +1,63 @@
+{
+  "name": "AI SDR — Reply Poller",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 15 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/replies/inbox",
+        "options": {}
+      },
+      "id": "poll-inbox",
+      "name": "Poll Inbox",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.first().json;\nif (!Array.isArray(items) || items.length === 0) return [];\nreturn items\n  .filter(r => r.category === 'interested')\n  .map(r => ({ json: r }));"
+      },
+      "id": "filter-interested",
+      "name": "Filter Interested Replies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "subject": "=Hot reply from {{ $json.prospect_name }}",
+        "message": "={{ $json.prospect_name }} ({{ $json.from_email }}) replied and seems interested!\n\nCategory: {{ $json.category }}\nSuggested action: {{ $json.suggested_action }}\n\nSnippet: {{ $json.body_snippet }}",
+        "options": {}
+      },
+      "id": "notify",
+      "name": "Notify (configure in n8n)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [900, 300],
+      "notes": "Replace with Slack, Gmail, or any notification node of your choice"
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [[{ "node": "Poll Inbox", "type": "main", "index": 0 }]]
+    },
+    "Poll Inbox": {
+      "main": [[{ "node": "Filter Interested Replies", "type": "main", "index": 0 }]]
+    },
+    "Filter Interested Replies": {
+      "main": [[{ "node": "Notify (configure in n8n)", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

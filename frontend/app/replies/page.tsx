@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { api, ReplyOut } from "../lib/api";
+import { api, InboxItem } from "../lib/api";
 
 const CATEGORY_STYLE: Record<string, string> = {
   interested: "bg-green-900 text-green-300 border-green-700",
@@ -10,18 +10,25 @@ const CATEGORY_STYLE: Record<string, string> = {
   other: "bg-gray-800 text-gray-400 border-gray-700",
 };
 
-export default function RepliesPage() {
-  const [prospectId, setProspectId] = useState("");
-  const [body, setBody] = useState("");
-  const [result, setResult] = useState<ReplyOut | null>(null);
-  const [loading, setLoading] = useState(false);
+const CATEGORY_LABEL: Record<string, string> = {
+  interested: "Interested",
+  not_now: "Not Now",
+  out_of_office: "Out of Office",
+  unsubscribe: "Unsubscribe",
+  other: "Other",
+};
 
-  const classify = async (e: React.FormEvent) => {
-    e.preventDefault();
+export default function RepliesPage() {
+  const [items, setItems] = useState<InboxItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [lastPolled, setLastPolled] = useState<string | null>(null);
+
+  const poll = async () => {
     setLoading(true);
     try {
-      const r = await api.classifyReply(parseInt(prospectId), body);
-      setResult(r);
+      const results = await api.pollInbox();
+      setItems(results);
+      setLastPolled(new Date().toLocaleTimeString());
     } catch (err) {
       console.error(err);
     } finally {
@@ -31,30 +38,54 @@ export default function RepliesPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Reply Classifier</h1>
-      <p className="text-sm text-gray-500 mb-6">Paste a reply email to classify it and get a suggested next action.</p>
-      <form onSubmit={classify} className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4 max-w-xl mb-8">
-        <input required placeholder="Prospect ID" value={prospectId} type="number"
-          onChange={e => setProspectId(e.target.value)}
-          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-500" />
-        <textarea required placeholder="Paste the reply email body here..." value={body}
-          onChange={e => setBody(e.target.value)} rows={6}
-          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-500 resize-none" />
-        <button type="submit" disabled={loading}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded px-4 py-2 text-sm font-medium transition-colors">
-          {loading ? "Classifying..." : "Classify Reply"}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">Reply Inbox</h1>
+          {lastPolled && <p className="text-xs text-gray-500 mt-0.5">Last checked: {lastPolled}</p>}
+        </div>
+        <button onClick={poll} disabled={loading}
+          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded font-medium transition-colors">
+          {loading ? "Checking..." : "Check Inbox"}
         </button>
-      </form>
+      </div>
 
-      {result && (
-        <div className={`border rounded-lg p-5 max-w-xl ${CATEGORY_STYLE[result.category]}`}>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="font-bold uppercase text-sm">{result.category.replace("_", " ")}</span>
-          </div>
-          <p className="text-sm mb-2">{result.summary}</p>
-          <p className="text-xs opacity-80">Next action: {result.suggested_action}</p>
+      {items.length === 0 && !loading && (
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-10 text-center">
+          <p className="text-gray-500 text-sm">Click "Check Inbox" to poll Gmail for replies.</p>
+          <p className="text-gray-600 text-xs mt-1">Requires Gmail OAuth setup and DRY_RUN=false in .env</p>
         </div>
       )}
+
+      <div className="space-y-3">
+        {items.map(item => (
+          <div key={item.gmail_message_id}
+            className={`border rounded-lg p-4 ${item.category ? CATEGORY_STYLE[item.category] : "bg-gray-900 border-gray-800 text-gray-300"}`}>
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <p className="font-medium text-sm">{item.subject || "(no subject)"}</p>
+                <p className="text-xs opacity-70">{item.prospect_name ?? item.from_email}</p>
+              </div>
+              {item.category && (
+                <span className="text-xs font-bold uppercase tracking-wide">
+                  {CATEGORY_LABEL[item.category] ?? item.category}
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs opacity-80 leading-relaxed mb-2">{item.body_snippet}</p>
+
+            {item.suggested_action && (
+              <p className="text-xs opacity-60 border-t border-current/20 pt-2 mt-2">
+                Next: {item.suggested_action}
+              </p>
+            )}
+
+            {!item.prospect_id && (
+              <p className="text-xs text-gray-500 mt-1">Unknown sender — not matched to any prospect</p>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 from typing import Optional
 from enum import Enum
+from datetime import datetime
 
 
 class ProspectStatus(str, Enum):
@@ -87,3 +88,21 @@ class ReplyOut(BaseModel):
     category: ReplyCategory
     summary: str
     suggested_action: str
+
+
+class SendResult(BaseModel):
+    prospect_id: int
+    status: str
+    message_id: Optional[str] = None
+    dry_run: bool = False
+
+
+class InboxItem(BaseModel):
+    gmail_message_id: str
+    from_email: str
+    subject: str
+    body_snippet: str
+    prospect_id: Optional[int] = None
+    prospect_name: Optional[str] = None
+    category: Optional[str] = None
+    suggested_action: Optional[str] = None

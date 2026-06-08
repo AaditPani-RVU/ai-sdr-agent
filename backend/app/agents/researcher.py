@@ -18,6 +18,8 @@ RESEARCH_SYSTEM_PROMPT = """You are an expert B2B sales researcher. Given inform
 3. Find specific personalization hooks (recent news, funding, hiring, product launches, etc.)
 4. Recommend the best outreach angle for a cold email
 
+IMPORTANT: If web search results are empty or unhelpful, use your own knowledge of the company. Most well-known companies are in your training data — draw on that. Never output generic "no information available" answers. Always produce specific, useful research based on what you know about the company and the prospect's role.
+
 You MUST respond with valid JSON only (no markdown, no extra text) in this exact structure:
 {
   "company_summary": "2-3 sentence description of what the company does and their stage",
@@ -41,7 +43,9 @@ Web research findings:
 Website content (if available):
 {website_content}
 
-Analyze this information deeply. Think about:
+Analyze this information deeply. If search results are sparse, draw on your own knowledge of {company} to fill the gaps — do not admit ignorance, produce useful research.
+
+Think about:
 - What specific challenges does a {role} at this type of company face?
 - What recent events (hiring sprees, funding, product launches, layoffs) create urgency?
 - What would make this person open a cold email?
@@ -123,7 +127,7 @@ async def research_prospect(prospect: ProspectCreate, prospect_id: int) -> Resea
         },
     ]
 
-    clean_response, thinking_trace = await chat(messages, model="deepseek-r1-distill-llama-70b", temperature=0.5)
+    clean_response, thinking_trace = await chat(messages, model="llama-3.3-70b-versatile", temperature=0.5)
 
     try:
         data = json.loads(clean_response)

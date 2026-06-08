@@ -4,11 +4,14 @@ from sqlalchemy import select
 import csv
 import io
 import json
+import os
+from datetime import datetime
 
-from app.db import get_db, Prospect, Research, EmailDraftModel
-from app.schemas import ProspectCreate, ProspectOut, ResearchResult, EmailDraft
+from app.db import get_db, Prospect, Research, EmailDraftModel, Campaign
+from app.schemas import ProspectCreate, ProspectOut, ResearchResult, EmailDraft, SendResult
 from app.agents.researcher import research_prospect
 from app.agents.writer import write_email
+from app.services.gmail_service import send_email
 
 router = APIRouter(prefix="/prospects", tags=["prospects"])
 
@@ -151,3 +154,81 @@ async def get_draft(prospect_id: int, db: AsyncSession = Depends(get_db)):
         follow_up_1=draft.follow_up_1,
         follow_up_2=draft.follow_up_2,
     )
+
+
+@router.post("/{prospect_id}/send", response_model=SendResult)
+async def send_initial(prospect_id: int, db: AsyncSession = Depends(get_db)):
+    prospect = (await db.execute(select(Prospect).where(Prospect.id == prospect_id))).scalar_one_or_none()
+    if not prospect:
+        raise HTTPException(status_code=404, detail="Prospect not found")
+    if prospect.status != "email_drafted":
+        raise HTTPException(status_code=400, detail=f"Expected status 'email_drafted', got '{prospect.status}'")
+
+    draft = (await db.execute(select(EmailDraftModel).where(EmailDraftModel.prospect_id == prospect_id))).scalar_one_or_none()
+    if not draft:
+        raise HTTPException(status_code=400, detail="No draft found — run POST /draft first")
+
+    sender_email = _resolve_sender(prospect)
+
+    msg_id = send_email(
+        to=prospect.email,
+        subject=draft.subject,
+        body=draft.body,
+        sender=sender_email,
+    )
+
+    prospect.status = "sent"
+    prospect.sent_at = datetime.utcnow()
+    prospect.gmail_thread_id = msg_id
+    await db.commit()
+
+    dry_run = os.getenv("DRY_RUN", "false").lower() == "true"
+    return SendResult(prospect_id=prospect_id, status="sent", message_id=msg_id, dry_run=dry_run)
+
+
+@router.post("/{prospect_id}/send-followup", response_model=SendResult)
+async def send_followup(prospect_id: int, db: AsyncSession = Depends(get_db)):
+    prospect = (await db.execute(select(Prospect).where(Prospect.id == prospect_id))).scalar_one_or_none()
+    if not prospect:
+        raise HTTPException(status_code=404, detail="Prospect not found")
+    if prospect.status not in ("sent", "replied"):
+        raise HTTPException(status_code=400, detail="Prospect must be in 'sent' status to follow up")
+    if prospect.followups_sent >= 2:
+        raise HTTPException(status_code=400, detail="All follow-ups already sent for this prospect")
+
+    draft = (await db.execute(select(EmailDraftModel).where(EmailDraftModel.prospect_id == prospect_id))).scalar_one_or_none()
+    if not draft:
+        raise HTTPException(status_code=400, detail="No draft found")
+
+    body = draft.follow_up_1 if prospect.followups_sent == 0 else draft.follow_up_2
+    subject = f"Re: {draft.subject}"
+    sender_email = _resolve_sender(prospect)
+
+    msg_id = send_email(
+        to=prospect.email,
+        subject=subject,
+        body=body,
+        sender=sender_email,
+        thread_id=prospect.gmail_thread_id,
+    )
+
+    prospect.followups_sent += 1
+    await db.commit()
+
+    dry_run = os.getenv("DRY_RUN", "false").lower() == "true"
+    return SendResult(
+        prospect_id=prospect_id,
+        status=f"followup_{prospect.followups_sent}_sent",
+        message_id=msg_id,
+        dry_run=dry_run,
+    )
+
+
+def _resolve_sender(prospect: Prospect) -> str:
+    """Get sender email from campaign, or fall back to SENDER_EMAIL env var."""
+    if prospect.campaign and prospect.campaign.sender_email:
+        return prospect.campaign.sender_email
+    fallback = os.getenv("SENDER_EMAIL", "")
+    if not fallback:
+        raise HTTPException(status_code=400, detail="No sender email — attach prospect to a campaign or set SENDER_EMAIL in .env")
+    return fallback

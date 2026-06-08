@@ -30,6 +30,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ prospect_id: prospectId, email_body: emailBody }),
     }),
+  sendEmail: (id: number) =>
+    req<SendResult>(`/prospects/${id}/send`, { method: "POST" }),
+  sendFollowUp: (id: number) =>
+    req<SendResult>(`/prospects/${id}/send-followup`, { method: "POST" }),
+  pollInbox: () => req<InboxItem[]>("/replies/inbox"),
 };
 
 export interface Campaign {
@@ -54,4 +59,11 @@ export interface EmailDraft {
 }
 export interface ReplyOut {
   prospect_id: number; category: string; summary: string; suggested_action: string;
+}
+export interface SendResult {
+  prospect_id: number; status: string; message_id?: string; dry_run: boolean;
+}
+export interface InboxItem {
+  gmail_message_id: string; from_email: string; subject: string; body_snippet: string;
+  prospect_id?: number; prospect_name?: string; category?: string; suggested_action?: string;
 }

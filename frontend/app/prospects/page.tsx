@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api, Prospect, ResearchResult, EmailDraft } from "../lib/api";
+import { api, Prospect, ResearchResult, EmailDraft, SendResult } from "../lib/api";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-gray-700 text-gray-300",
@@ -101,7 +101,8 @@ export default function ProspectsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [research, setResearch] = useState<Record<number, ResearchResult>>({});
   const [drafts, setDrafts] = useState<Record<number, EmailDraft>>({});
-  const [busy, setBusy] = useState<Record<number, string>>({});  // id → action
+  const [sendResults, setSendResults] = useState<Record<number, SendResult>>({});
+  const [busy, setBusy] = useState<Record<number, string>>({});
   const [view, setView] = useState<Record<number, ViewMode>>({});
 
   useEffect(() => { api.getProspects().then(setProspects).catch(console.error); }, []);
@@ -125,6 +126,17 @@ export default function ProspectsPage() {
       setDrafts(d => ({ ...d, [id]: draft }));
       setProspects(ps => ps.map(p => p.id === id ? { ...p, status: "email_drafted" } : p));
       setView(v => ({ ...v, [id]: "draft" }));
+    } finally {
+      setBusy(b => { const n = { ...b }; delete n[id]; return n; });
+    }
+  };
+
+  const runSend = async (id: number) => {
+    setBusy(b => ({ ...b, [id]: "sending" }));
+    try {
+      const result = await api.sendEmail(id);
+      setSendResults(s => ({ ...s, [id]: result }));
+      setProspects(ps => ps.map(p => p.id === id ? { ...p, status: "sent" } : p));
     } finally {
       setBusy(b => { const n = { ...b }; delete n[id]; return n; });
     }
@@ -196,6 +208,17 @@ export default function ProspectsPage() {
                       className="text-xs bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white px-3 py-1 rounded transition-colors">
                       {busy[p.id] === "drafting" ? "Drafting..." : "Draft Emails"}
                     </button>
+                  )}
+
+                  {p.status === "email_drafted" && (
+                    <button onClick={() => runSend(p.id)} disabled={!!busy[p.id]}
+                      className="text-xs bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white px-3 py-1 rounded transition-colors">
+                      {busy[p.id] === "sending" ? "Sending..." : "Send"}
+                    </button>
+                  )}
+
+                  {sendResults[p.id]?.dry_run && (
+                    <span className="text-xs text-yellow-500 bg-yellow-900/40 px-2 py-0.5 rounded">dry run</span>
                   )}
                 </div>
               </div>
