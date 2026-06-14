@@ -15,33 +15,38 @@
     },
     {
       "parameters": {
-        "url": "http://localhost:8000/prospects/?status=sent",
+        "url": "http://host.docker.internal:8000/prospects/trigger-followups",
+        "method": "POST",
         "options": {}
       },
-      "id": "get-sent-prospects",
-      "name": "Get Sent Prospects",
+      "id": "trigger-followups",
+      "name": "Trigger Follow-ups",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [460, 300]
     },
     {
       "parameters": {
-        "jsCode": "const now = Date.now();\nconst DAY = 86400000;\nreturn $input.all().flatMap(item => {\n  const prospects = Array.isArray(item.json) ? item.json : [item.json];\n  return prospects.filter(p => {\n    if (!p.sent_at) return false;\n    const sentAt = new Date(p.sent_at).getTime();\n    const daysSince = (now - sentAt) / DAY;\n    if (p.followups_sent === 0 && daysSince >= 3) return true;\n    if (p.followups_sent === 1 && daysSince >= 7) return true;\n    return false;\n  }).map(p => ({ json: p }));\n});"
+        "jsCode": "const result = $input.first().json;\nconst triggered = result.triggered ?? 0;\nif (triggered === 0) return [];\nreturn [{ json: { summary: `Sent ${triggered} follow-up(s)`, details: result.details } }];"
       },
-      "id": "filter-due",
-      "name": "Filter Due Follow-ups",
+      "id": "summarize",
+      "name": "Summarize Results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [680, 300]
     },
     {
       "parameters": {
-        "url": "=http://localhost:8000/prospects/{{ $json.id }}/send-followup",
+        "url": "YOUR_SLACK_WEBHOOK_URL",
         "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [{ "name": "text", "value": "={{ $json.summary }}" }]
+        },
         "options": {}
       },
-      "id": "send-followup",
-      "name": "Send Follow-up",
+      "id": "notify",
+      "name": "Slack Notification",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [900, 300]
@@ -49,13 +54,13 @@
   ],
   "connections": {
     "Weekdays 9am": {
-      "main": [[{ "node": "Get Sent Prospects", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Trigger Follow-ups", "type": "main", "index": 0 }]]
     },
-    "Get Sent Prospects": {
-      "main": [[{ "node": "Filter Due Follow-ups", "type": "main", "index": 0 }]]
+    "Trigger Follow-ups": {
+      "main": [[{ "node": "Summarize Results", "type": "main", "index": 0 }]]
     },
-    "Filter Due Follow-ups": {
-      "main": [[{ "node": "Send Follow-up", "type": "main", "index": 0 }]]
+    "Summarize Results": {
+      "main": [[{ "node": "Slack Notification", "type": "main", "index": 0 }]]
     }
   },
   "settings": { "executionOrder": "v1" }

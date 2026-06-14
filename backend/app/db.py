@@ -41,6 +41,8 @@ class Prospect(Base):
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     followups_sent: Mapped[int] = mapped_column(Integer, default=0)
     gmail_thread_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    booked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    calendly_event_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     campaign_id: Mapped[Optional[int]] = mapped_column(ForeignKey("campaigns.id"), nullable=True)
     campaign: Mapped[Optional["Campaign"]] = relationship(back_populates="prospects")
     research: Mapped[Optional["Research"]] = relationship(back_populates="prospect", uselist=False)

@@ -1,16 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 import csv
 import io
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from app.db import get_db, Prospect, Research, EmailDraftModel, Campaign
-from app.schemas import ProspectCreate, ProspectOut, ResearchResult, EmailDraft, SendResult
+from app.schemas import ProspectCreate, ProspectOut, ResearchResult, EmailDraft, SendResult, ContactFinderRequest, ContactCandidate
 from app.agents.researcher import research_prospect
 from app.agents.writer import write_email
+from app.agents.contact_finder import find_contacts
 from app.services.gmail_service import send_email
 
 router = APIRouter(prefix="/prospects", tags=["prospects"])
@@ -32,13 +34,16 @@ async def create_prospect(data: ProspectCreate, db: AsyncSession = Depends(get_d
 async def bulk_upload(campaign_id: int, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     """Upload a CSV with columns: first_name, last_name, email, role, company, website_url, linkedin_url"""
     content = await file.read()
-    reader = csv.DictReader(io.StringIO(content.decode("utf-8")))
+    reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
     created = []
     for row in reader:
-        existing = await db.execute(select(Prospect).where(Prospect.email == row["email"]))
+        clean = {k.strip(): (v.strip() if v else None) for k, v in row.items()}
+        if not clean.get("email"):
+            continue
+        existing = await db.execute(select(Prospect).where(Prospect.email == clean["email"]))
         if existing.scalar_one_or_none():
             continue
-        prospect = Prospect(campaign_id=campaign_id, **{k: v for k, v in row.items() if k in ProspectCreate.model_fields})
+        prospect = Prospect(campaign_id=campaign_id, **{k: v for k, v in clean.items() if k in ProspectCreate.model_fields})
         db.add(prospect)
         await db.flush()
         created.append(prospect)
@@ -158,7 +163,9 @@ async def get_draft(prospect_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{prospect_id}/send", response_model=SendResult)
 async def send_initial(prospect_id: int, db: AsyncSession = Depends(get_db)):
-    prospect = (await db.execute(select(Prospect).where(Prospect.id == prospect_id))).scalar_one_or_none()
+    prospect = (await db.execute(
+        select(Prospect).options(selectinload(Prospect.campaign)).where(Prospect.id == prospect_id)
+    )).scalar_one_or_none()
     if not prospect:
         raise HTTPException(status_code=404, detail="Prospect not found")
     if prospect.status != "email_drafted":
@@ -188,7 +195,9 @@ async def send_initial(prospect_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{prospect_id}/send-followup", response_model=SendResult)
 async def send_followup(prospect_id: int, db: AsyncSession = Depends(get_db)):
-    prospect = (await db.execute(select(Prospect).where(Prospect.id == prospect_id))).scalar_one_or_none()
+    prospect = (await db.execute(
+        select(Prospect).options(selectinload(Prospect.campaign)).where(Prospect.id == prospect_id)
+    )).scalar_one_or_none()
     if not prospect:
         raise HTTPException(status_code=404, detail="Prospect not found")
     if prospect.status not in ("sent", "replied"):
@@ -222,6 +231,98 @@ async def send_followup(prospect_id: int, db: AsyncSession = Depends(get_db)):
         message_id=msg_id,
         dry_run=dry_run,
     )
+
+
+@router.post("/trigger-followups")
+async def trigger_followups(db: AsyncSession = Depends(get_db)):
+    """Called by n8n daily: send follow-up 1 at day 3 and follow-up 2 at day 7."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    day3 = now - timedelta(days=3)
+    day7 = now - timedelta(days=7)
+
+    result = await db.execute(
+        select(Prospect)
+        .options(selectinload(Prospect.campaign))
+        .where(
+            Prospect.status == "sent",
+            Prospect.sent_at.isnot(None),
+            Prospect.followups_sent < 2,
+        )
+    )
+    prospects = result.scalars().all()
+
+    triggered = []
+    for prospect in prospects:
+        draft = (await db.execute(
+            select(EmailDraftModel).where(EmailDraftModel.prospect_id == prospect.id)
+        )).scalar_one_or_none()
+        if not draft:
+            continue
+
+        if prospect.followups_sent == 0 and prospect.sent_at <= day3:
+            body = draft.follow_up_1
+            followup_num = 1
+        elif prospect.followups_sent == 1 and prospect.sent_at <= day7:
+            body = draft.follow_up_2
+            followup_num = 2
+        else:
+            continue
+
+        try:
+            sender_email = _resolve_sender(prospect)
+            send_email(
+                to=prospect.email,
+                subject=f"Re: {draft.subject}",
+                body=body,
+                sender=sender_email,
+                thread_id=prospect.gmail_thread_id,
+            )
+            prospect.followups_sent = followup_num
+            triggered.append({"prospect_id": prospect.id, "followup": followup_num})
+        except Exception:
+            continue
+
+    await db.commit()
+    return {"triggered": len(triggered), "details": triggered}
+
+
+@router.post("/find-contacts", response_model=list[ContactCandidate])
+async def find_company_contacts(request: ContactFinderRequest):
+    """Use web search to find key contacts at a company. Returns candidates — not saved yet."""
+    return await find_contacts(request)
+
+
+@router.post("/confirm-contacts", response_model=list[ProspectOut])
+async def confirm_contacts(
+    contacts: list[ProspectCreate],
+    db: AsyncSession = Depends(get_db),
+):
+    """Save a user-selected subset of found contacts as prospects."""
+    created = []
+    for data in contacts:
+        existing = await db.execute(select(Prospect).where(Prospect.email == data.email))
+        if existing.scalar_one_or_none():
+            continue
+        prospect = Prospect(**data.model_dump())
+        db.add(prospect)
+        await db.flush()
+        created.append(prospect)
+    await db.commit()
+    return created
+
+
+@router.get("/stats")
+async def get_stats(campaign_id: int | None = None, db: AsyncSession = Depends(get_db)):
+    """Return prospect counts grouped by status."""
+    q = select(Prospect)
+    if campaign_id:
+        q = q.where(Prospect.campaign_id == campaign_id)
+    result = await db.execute(q)
+    prospects = result.scalars().all()
+    counts: dict[str, int] = {}
+    for p in prospects:
+        counts[p.status] = counts.get(p.status, 0) + 1
+    return counts
 
 
 def _resolve_sender(prospect: Prospect) -> str:

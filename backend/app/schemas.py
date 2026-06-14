@@ -36,6 +36,10 @@ class ProspectCreate(BaseModel):
 class ProspectOut(ProspectCreate):
     id: int
     status: ProspectStatus = ProspectStatus.PENDING
+    sent_at: Optional[datetime] = None
+    followups_sent: int = 0
+    booked_at: Optional[datetime] = None
+    calendly_event_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -106,3 +110,24 @@ class InboxItem(BaseModel):
     prospect_name: Optional[str] = None
     category: Optional[str] = None
     suggested_action: Optional[str] = None
+
+
+# ── Contact Finder ────────────────────────────────────────────────────────────
+
+class ContactFinderRequest(BaseModel):
+    company: str
+    website_url: Optional[str] = None
+    roles: list[str] = ["CEO", "VP of Sales", "Head of Marketing", "CTO"]
+    campaign_id: Optional[int] = None
+
+
+class ContactCandidate(BaseModel):
+    first_name: str
+    last_name: str
+    email: Optional[str] = None
+    role: str
+    company: str
+    website_url: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    confidence: float = 0.5
+    source: Optional[str] = None

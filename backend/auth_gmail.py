@@ -17,6 +17,7 @@ from google.oauth2.credentials import Credentials
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.modify",   # needed to mark as read
+    "https://www.googleapis.com/auth/calendar",       # needed for booking events
 ]
 
 CREDENTIALS_FILE = "credentials.json"
@@ -38,7 +39,7 @@ def main():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)
+            creds = flow.run_local_server(port=8899, redirect_uri_trailing_slash=False)
 
         with open(TOKEN_FILE, "w") as f:
             f.write(creds.to_json())

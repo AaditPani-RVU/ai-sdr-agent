@@ -7,6 +7,7 @@ from app.db import get_db, Prospect
 from app.schemas import ReplyIn, ReplyOut, InboxItem
 from app.agents.classifier import classify_reply
 from app.services.gmail_service import list_unread_replies, mark_as_read
+from app.services.slack_service import notify_booked
 
 router = APIRouter(prefix="/replies", tags=["replies"])
 
@@ -59,6 +60,11 @@ async def poll_inbox(db: AsyncSession = Depends(get_db)):
                 prospect.status = new_status
                 if classification.category.value == "interested":
                     prospect.status = "booked"
+                    notify_booked(
+                        prospect_name=f"{prospect.first_name} {prospect.last_name}",
+                        company=prospect.company,
+                        email=prospect.email,
+                    )
 
         mark_as_read(msg["id"])
         results.append(item)

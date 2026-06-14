@@ -16,8 +16,20 @@ export const api = {
 
   getProspects: (campaignId?: number) =>
     req<Prospect[]>(`/prospects/${campaignId ? `?campaign_id=${campaignId}` : ""}`),
+  getStats: (campaignId?: number) =>
+    req<Record<string, number>>(`/prospects/stats${campaignId ? `?campaign_id=${campaignId}` : ""}`),
   createProspect: (data: ProspectCreate) =>
     req<Prospect>("/prospects/", { method: "POST", body: JSON.stringify(data) }),
+  uploadProspects: async (campaignId: number, file: File): Promise<Prospect[]> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/prospects/bulk?campaign_id=${campaignId}`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) throw new Error(`Upload error ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
   researchProspect: (id: number) =>
     req<ResearchResult>(`/prospects/${id}/research`, { method: "POST" }),
   draftEmail: (id: number) =>
@@ -34,7 +46,22 @@ export const api = {
     req<SendResult>(`/prospects/${id}/send`, { method: "POST" }),
   sendFollowUp: (id: number) =>
     req<SendResult>(`/prospects/${id}/send-followup`, { method: "POST" }),
+  triggerFollowups: () =>
+    req<{ triggered: number; details: { prospect_id: number; followup: number }[] }>(
+      "/prospects/trigger-followups", { method: "POST" }
+    ),
   pollInbox: () => req<InboxItem[]>("/replies/inbox"),
+
+  findContacts: (data: ContactFinderRequest) =>
+    req<ContactCandidate[]>("/prospects/find-contacts", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  confirmContacts: (contacts: ProspectCreate[]) =>
+    req<Prospect[]>("/prospects/confirm-contacts", {
+      method: "POST",
+      body: JSON.stringify(contacts),
+    }),
 };
 
 export interface Campaign {
@@ -46,6 +73,21 @@ export interface CampaignCreate { name: string; sender_name: string; sender_emai
 export interface Prospect {
   id: number; first_name: string; last_name: string; email: string;
   role: string; company: string; website_url?: string; status: string;
+  sent_at?: string; followups_sent: number;
+  booked_at?: string; calendly_event_url?: string;
+}
+
+export interface ContactFinderRequest {
+  company: string;
+  website_url?: string;
+  roles?: string[];
+  campaign_id?: number;
+}
+
+export interface ContactCandidate {
+  first_name: string; last_name: string; email?: string; role: string;
+  company: string; website_url?: string; linkedin_url?: string;
+  confidence: number; source?: string;
 }
 export interface ProspectCreate extends Omit<Prospect, "id" | "status"> { campaign_id?: number; linkedin_url?: string; }
 export interface ResearchResult {

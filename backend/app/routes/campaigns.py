@@ -47,4 +47,18 @@ async def get_campaign(campaign_id: int, db: AsyncSession = Depends(get_db)):
     campaign = result.scalar_one_or_none()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    return campaign
+    counts = await db.execute(
+        select(
+            func.count(Prospect.id),
+            func.sum(case((Prospect.status == "sent", 1), else_=0)),
+            func.sum(case((Prospect.status == "replied", 1), else_=0)),
+            func.sum(case((Prospect.status == "booked", 1), else_=0)),
+        ).where(Prospect.campaign_id == campaign_id)
+    )
+    total, sent, replied, booked = counts.one()
+    return CampaignOut(
+        id=campaign.id, name=campaign.name, description=campaign.description,
+        sender_name=campaign.sender_name, sender_email=campaign.sender_email,
+        total_prospects=total or 0, sent=sent or 0,
+        replied=replied or 0, booked=booked or 0,
+    )

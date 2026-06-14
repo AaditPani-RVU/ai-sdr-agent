@@ -1,0 +1,67 @@
+{
+  "name": "AI SDR — Booked Prospect Notifier",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 17 * * 1-5" }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Weekdays 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:8000/prospects/",
+        "options": {}
+      },
+      "id": "get-prospects",
+      "name": "Get All Prospects",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prospects = $input.first().json;\nif (!Array.isArray(prospects)) return [];\nconst booked = prospects.filter(p => p.status === 'booked');\nif (booked.length === 0) return [];\nconst lines = booked.map(p => `• ${p.first_name} ${p.last_name} (${p.company}) — ${p.email}`);\nreturn [{ json: {\n  count: booked.length,\n  summary: `:calendar: *${booked.length} meeting(s) booked today!*\\n\\n${lines.join('\\n')}`\n} }];"
+      },
+      "id": "filter-booked",
+      "name": "Filter Booked",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "YOUR_SLACK_WEBHOOK_URL",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [{ "name": "text", "value": "={{ $json.summary }}" }]
+        },
+        "options": {}
+      },
+      "id": "slack-notify",
+      "name": "Slack Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300],
+      "notes": "Set SLACK_WEBHOOK_URL as an n8n environment variable, or replace with a Slack node"
+    }
+  ],
+  "connections": {
+    "Weekdays 5pm": {
+      "main": [[{ "node": "Get All Prospects", "type": "main", "index": 0 }]]
+    },
+    "Get All Prospects": {
+      "main": [[{ "node": "Filter Booked", "type": "main", "index": 0 }]]
+    },
+    "Filter Booked": {
+      "main": [[{ "node": "Slack Notification", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

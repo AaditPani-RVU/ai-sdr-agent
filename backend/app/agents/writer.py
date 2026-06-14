@@ -5,6 +5,7 @@ Three-email sequence: PAS cold email → value-add follow-up → break-up.
 Tone is calibrated by prospect seniority (C-level vs VP vs Manager).
 """
 import json
+import os
 import re
 from app.schemas import ResearchResult, ProspectCreate, EmailDraft
 from app.services.groq_client import chat
@@ -91,6 +92,13 @@ Remember:
 Return JSON only."""
 
 
+def _booking_footer() -> str:
+    link = os.getenv("BOOKING_LINK", "").strip()
+    if not link:
+        return ""
+    return f"\n\nP.S. If you'd like to grab time directly: {link}"
+
+
 async def write_email(prospect: ProspectCreate, research: ResearchResult, prospect_id: int) -> EmailDraft:
     tone = _seniority_tone(prospect.role)
 
@@ -112,15 +120,16 @@ async def write_email(prospect: ProspectCreate, research: ResearchResult, prospe
         },
     ]
 
-    clean, _ = await chat(messages, model="llama3-70b-8192", temperature=0.65, max_tokens=1500)
+    clean, _ = await chat(messages, model="llama-3.3-70b-versatile", temperature=0.65, max_tokens=1500)
     data = _parse_json(clean)
 
+    footer = _booking_footer()
     return EmailDraft(
         prospect_id=prospect_id,
         subject=data.get("subject", ""),
         subject_alt=data.get("subject_alt", ""),
-        body=data.get("body", ""),
-        follow_up_1=data.get("follow_up_1", ""),
+        body=data.get("body", "") + footer,
+        follow_up_1=data.get("follow_up_1", "") + footer,
         follow_up_2=data.get("follow_up_2", ""),
     )
 

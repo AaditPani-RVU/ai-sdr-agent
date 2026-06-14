@@ -1,0 +1,73 @@
+{
+  "name": "AI SDR — Google Calendar Booking Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "*/15 * * * *" }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 15 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:8000/webhooks/gcal/sync",
+        "method": "POST",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [{ "name": "since_minutes", "value": "20" }]
+        },
+        "options": {}
+      },
+      "id": "gcal-sync",
+      "name": "Sync Google Calendar Bookings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300],
+      "notes": "Scans your Google Calendar for new events whose attendee emails match known prospects and marks them as booked."
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nif (result.newly_booked === 0) return [];\nconst lines = result.details.map(d => `• ${d.email} — ${d.meeting || 'Meeting'} at ${d.start_time || 'TBD'}`);\nreturn [{ json: {\n  count: result.newly_booked,\n  summary: `:calendar: *${result.newly_booked} new booking(s) detected!*\\n\\n${lines.join('\\n')}`\n} }];"
+      },
+      "id": "check-new",
+      "name": "Check for New Bookings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [{ "name": "text", "value": "={{ $json.summary }}" }]
+        },
+        "options": {}
+      },
+      "id": "slack-notify",
+      "name": "Slack Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300],
+      "notes": "Set SLACK_WEBHOOK_URL as an n8n environment variable"
+    }
+  ],
+  "connections": {
+    "Every 15 min": {
+      "main": [[{ "node": "Sync Google Calendar Bookings", "type": "main", "index": 0 }]]
+    },
+    "Sync Google Calendar Bookings": {
+      "main": [[{ "node": "Check for New Bookings", "type": "main", "index": 0 }]]
+    },
+    "Check for New Bookings": {
+      "main": [[{ "node": "Slack Notification", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

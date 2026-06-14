@@ -15,7 +15,7 @@
     },
     {
       "parameters": {
-        "url": "http://localhost:8000/replies/inbox",
+        "url": "http://host.docker.internal:8000/replies/inbox",
         "options": {}
       },
       "id": "poll-inbox",
@@ -36,16 +36,19 @@
     },
     {
       "parameters": {
-        "subject": "=Hot reply from {{ $json.prospect_name }}",
-        "message": "={{ $json.prospect_name }} ({{ $json.from_email }}) replied and seems interested!\n\nCategory: {{ $json.category }}\nSuggested action: {{ $json.suggested_action }}\n\nSnippet: {{ $json.body_snippet }}",
+        "url": "YOUR_SLACK_WEBHOOK_URL",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [{ "name": "text", "value": "=:fire: *Hot reply from {{ $json.prospect_name }}!*\n\n{{ $json.prospect_name }} ({{ $json.from_email }}) is interested.\nSuggested action: {{ $json.suggested_action }}\n\n_{{ $json.body_snippet }}_" }]
+        },
         "options": {}
       },
       "id": "notify",
-      "name": "Notify (configure in n8n)",
-      "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2.1,
-      "position": [900, 300],
-      "notes": "Replace with Slack, Gmail, or any notification node of your choice"
+      "name": "Slack Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
     }
   ],
   "connections": {
@@ -56,7 +59,7 @@
       "main": [[{ "node": "Filter Interested Replies", "type": "main", "index": 0 }]]
     },
     "Filter Interested Replies": {
-      "main": [[{ "node": "Notify (configure in n8n)", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Slack Notification", "type": "main", "index": 0 }]]
     }
   },
   "settings": { "executionOrder": "v1" }
