@@ -6,6 +6,9 @@ __pycache__/
 *.db
 token.json
 
+# Google OAuth credentials (never commit — copy from credentials.json.example)
+credentials.json
+
 # Node
 node_modules/
 .next/
